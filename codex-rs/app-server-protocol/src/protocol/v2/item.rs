@@ -1074,6 +1074,7 @@ pub struct ItemGuardianApprovalReviewStartedNotification {
     pub thread_id: String,
     pub turn_id: String,
     /// Unix timestamp (in milliseconds) when this review started.
+    #[serde(default)]
     #[ts(type = "number")]
     pub started_at_ms: i64,
     /// Stable identifier for this review.
@@ -1103,9 +1104,11 @@ pub struct ItemGuardianApprovalReviewCompletedNotification {
     pub thread_id: String,
     pub turn_id: String,
     /// Unix timestamp (in milliseconds) when this review started.
+    #[serde(default)]
     #[ts(type = "number")]
     pub started_at_ms: i64,
     /// Unix timestamp (in milliseconds) when this review completed.
+    #[serde(default)]
     #[ts(type = "number")]
     pub completed_at_ms: i64,
     /// Stable identifier for this review.
@@ -1156,6 +1159,20 @@ pub struct AgentMessageDeltaNotification {
     pub thread_id: String,
     pub turn_id: String,
     pub item_id: String,
+    pub delta: String,
+}
+
+/// Streaming delta for a dynamic tool call's argument JSON.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct DynamicToolCallArgumentsDeltaNotification {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub call_id: Option<String>,
     pub delta: String,
 }
 
@@ -1258,6 +1275,7 @@ pub struct CommandExecutionRequestApprovalParams {
     pub turn_id: String,
     pub item_id: String,
     /// Unix timestamp (in milliseconds) when this approval request started.
+    #[serde(default)]
     #[ts(type = "number")]
     pub started_at_ms: i64,
     /// Unique identifier for this specific approval callback.
@@ -1334,6 +1352,7 @@ pub struct FileChangeRequestApprovalParams {
     pub turn_id: String,
     pub item_id: String,
     /// Unix timestamp (in milliseconds) when this approval request started.
+    #[serde(default)]
     #[ts(type = "number")]
     pub started_at_ms: i64,
     /// Optional explanatory reason (e.g. request for extra write access).

@@ -148,6 +148,26 @@ impl TurnRequestProcessor {
             .map(|response| response.map(Into::into))
     }
 
+    pub(crate) async fn thread_realtime_resolve_handoff(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: ThreadRealtimeResolveHandoffParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        self.thread_realtime_resolve_handoff_inner(request_id, params)
+            .await
+            .map(|response| response.map(Into::into))
+    }
+
+    pub(crate) async fn thread_realtime_finalize_handoff(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: ThreadRealtimeFinalizeHandoffParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        self.thread_realtime_finalize_handoff_inner(request_id, params)
+            .await
+            .map(|response| response.map(Into::into))
+    }
+
     pub(crate) async fn thread_realtime_list_voices(
         &self,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
@@ -780,6 +800,8 @@ impl TurnRequestProcessor {
                     }
                 }),
                 voice: params.voice,
+                client_controlled_handoff: params.client_controlled_handoff,
+                dynamic_tools: params.dynamic_tools,
             }),
         )
         .await
@@ -856,6 +878,50 @@ impl TurnRequestProcessor {
                 internal_error(format!("failed to stop realtime conversation: {err}"))
             })?;
         Ok(Some(ThreadRealtimeStopResponse::default()))
+    }
+
+    async fn thread_realtime_resolve_handoff_inner(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: ThreadRealtimeResolveHandoffParams,
+    ) -> Result<Option<ThreadRealtimeResolveHandoffResponse>, JSONRPCErrorError> {
+        let Some((_, thread)) = self
+            .prepare_realtime_conversation_thread(request_id, &params.thread_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.submit_core_op(
+            request_id,
+            thread.as_ref(),
+            Op::RealtimeConversationResolveHandoff {
+                tool_call_output: params.tool_call_output,
+            },
+        )
+        .await
+        .map_err(|err| internal_error(format!("failed to resolve realtime handoff: {err}")))?;
+        Ok(Some(ThreadRealtimeResolveHandoffResponse::default()))
+    }
+
+    async fn thread_realtime_finalize_handoff_inner(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: ThreadRealtimeFinalizeHandoffParams,
+    ) -> Result<Option<ThreadRealtimeFinalizeHandoffResponse>, JSONRPCErrorError> {
+        let Some((_, thread)) = self
+            .prepare_realtime_conversation_thread(request_id, &params.thread_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.submit_core_op(
+            request_id,
+            thread.as_ref(),
+            Op::RealtimeConversationFinalizeHandoff,
+        )
+        .await
+        .map_err(|err| internal_error(format!("failed to finalize realtime handoff: {err}")))?;
+        Ok(Some(ThreadRealtimeFinalizeHandoffResponse::default()))
     }
 
     fn build_review_turn(turn_id: String, display_text: &str) -> Turn {

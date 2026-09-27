@@ -992,6 +992,10 @@ pub struct ThreadReadParams {
 #[ts(export_to = "v2/")]
 pub struct ThreadReadResponse {
     pub thread: Thread,
+    #[serde(default)]
+    pub approval_policy: Option<AskForApproval>,
+    #[serde(default)]
+    pub sandbox: Option<SandboxPolicy>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

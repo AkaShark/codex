@@ -48,6 +48,90 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
 use codex_utils_pty::process_group::kill_child_process_group;
 
+#[cfg(target_os = "ios")]
+use std::sync::Arc;
+#[cfg(any(target_os = "ios", target_os = "android"))]
+use std::sync::OnceLock;
+
+/// Pluggable executor for platforms that cannot fork/exec (e.g. iOS).
+#[cfg(target_os = "ios")]
+pub(crate) static IOS_EXEC_HOOK: OnceLock<
+    fn(&[String], &Path, &HashMap<String, String>, Option<u64>) -> (i32, Vec<u8>),
+> = OnceLock::new();
+
+#[cfg(target_os = "ios")]
+pub type IosExecOutputHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
+
+#[cfg(target_os = "ios")]
+pub(crate) static IOS_STREAMING_EXEC_HOOK: OnceLock<
+    fn(
+        &[String],
+        &Path,
+        &HashMap<String, String>,
+        Option<u64>,
+        IosExecOutputHandler,
+    ) -> (i32, Vec<u8>),
+> = OnceLock::new();
+
+/// Register the iOS exec hook before starting the server.
+#[cfg(target_os = "ios")]
+pub fn set_ios_exec_hook(
+    f: fn(&[String], &Path, &HashMap<String, String>, Option<u64>) -> (i32, Vec<u8>),
+) {
+    let _ = IOS_EXEC_HOOK.set(f);
+}
+
+/// Register an iOS exec hook that can stream stdout/stderr chunks before the
+/// command completes. Falls back to `set_ios_exec_hook` when unset.
+#[cfg(target_os = "ios")]
+pub fn set_ios_streaming_exec_hook(
+    f: fn(
+        &[String],
+        &Path,
+        &HashMap<String, String>,
+        Option<u64>,
+        IosExecOutputHandler,
+    ) -> (i32, Vec<u8>),
+) {
+    let _ = IOS_STREAMING_EXEC_HOOK.set(f);
+}
+
+/// Resolve a CLI tool name (e.g. "git") to an absolute path on Android.
+///
+/// Android's app sandbox can fork/exec freely, but the only writable+executable
+/// location is the app's `nativeLibraryDir`, which the package installer
+/// populates from `jniLibs/<abi>/`. Bundled binaries are therefore named
+/// `lib<tool>.so` and must be looked up explicitly — they are not on PATH.
+///
+/// The resolver returns the resolved absolute path or `None` if the tool name
+/// is not bundled (in which case the original argv[0] is used unchanged and
+/// the standard PATH-based lookup runs).
+#[cfg(target_os = "android")]
+pub(crate) static ANDROID_TOOL_RESOLVER: OnceLock<fn(&str) -> Option<String>> = OnceLock::new();
+
+/// Register the Android tool resolver. Should be called once during platform
+/// init from the mobile client before any exec call is dispatched.
+#[cfg(target_os = "android")]
+pub fn set_android_tool_resolver(f: fn(&str) -> Option<String>) {
+    let _ = ANDROID_TOOL_RESOLVER.set(f);
+}
+
+/// Preflight mutator for mobile shell exec. Mutates `command` (argv) in
+/// place right before the platform-specific exec paths fire. Used by the
+/// mobile client to rewrite `/tmp/...` path tokens to the platform's real
+/// temporary directory, since iOS and Android sandboxes have no real
+/// `/tmp` of their own. Only installed on mobile; never fires for remote
+/// SSH/WebSocket execution (which never enters this function).
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub(crate) static MOBILE_EXEC_PREFLIGHT: OnceLock<fn(&mut Vec<String>)> = OnceLock::new();
+
+/// Register the mobile exec preflight. Called once from the mobile client's
+/// platform bootstrap (before any exec call).
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub fn set_mobile_exec_preflight(f: fn(&mut Vec<String>)) {
+    let _ = MOBILE_EXEC_PREFLIGHT.set(f);
+}
+
 pub const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000;
 
 // Hardcode these since it does not seem worth including the libc crate just
@@ -904,6 +988,7 @@ fn aggregate_output(
 /// Note this command does not apply any sandboxing logic. The caller is
 /// responsible for constructing [ExecParams::command] to include any sandboxing
 /// wrapper args, as appropriate.
+#[cfg_attr(target_os = "ios", allow(unused_variables, unreachable_code))]
 async fn exec(
     params: ExecParams,
     network_sandbox_policy: NetworkSandboxPolicy,
@@ -929,6 +1014,55 @@ async fn exec(
     } = params;
     if let Some(network) = network.as_ref() {
         network.apply_to_env(&mut env);
+    }
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let mut command = command;
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if let Some(preflight) = MOBILE_EXEC_PREFLIGHT.get() {
+        preflight(&mut command);
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let timeout_ms = if capture_policy.uses_expiration() {
+            expiration.timeout_ms()
+        } else {
+            None
+        };
+        let (code, data) = IOS_EXEC_HOOK
+            .get()
+            .map(|f| f(&command, &cwd, &env, timeout_ms))
+            .unwrap_or_else(|| {
+                (
+                    -1,
+                    b"shell exec unavailable: no iOS exec hook registered\n".to_vec(),
+                )
+            });
+        return Ok(RawExecToolCallOutput {
+            exit_status: synthetic_exit_status(code),
+            stdout: StreamOutput {
+                text: data.clone(),
+                truncated_after_lines: None,
+            },
+            stderr: StreamOutput {
+                text: Vec::new(),
+                truncated_after_lines: None,
+            },
+            aggregated_output: StreamOutput {
+                text: data,
+                truncated_after_lines: None,
+            },
+            timed_out: false,
+        });
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        if let Some(resolver) = ANDROID_TOOL_RESOLVER.get()
+            && let Some(first) = command.first()
+            && let Some(resolved) = resolver(first.as_str())
+        {
+            command[0] = resolved;
+        }
     }
 
     let (program, args) = command.split_first().ok_or_else(|| {

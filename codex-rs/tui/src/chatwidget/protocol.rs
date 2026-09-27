@@ -238,6 +238,7 @@ impl ChatWidget {
             | ServerNotification::WindowsSandboxSetupCompleted(_)
             | ServerNotification::AccountLoginCompleted(_) => {}
             ServerNotification::ContextCompacted(_) => {}
+            ServerNotification::DynamicToolCallArgumentsDelta(_) => {}
         }
     }
 

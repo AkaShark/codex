@@ -773,6 +773,18 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadRealtimeStopResponse,
     },
+    #[experimental("thread/realtime/resolveHandoff")]
+    ThreadRealtimeResolveHandoff => "thread/realtime/resolveHandoff" {
+        params: v2::ThreadRealtimeResolveHandoffParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadRealtimeResolveHandoffResponse,
+    },
+    #[experimental("thread/realtime/finalizeHandoff")]
+    ThreadRealtimeFinalizeHandoff => "thread/realtime/finalizeHandoff" {
+        params: v2::ThreadRealtimeFinalizeHandoffParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadRealtimeFinalizeHandoffResponse,
+    },
     #[experimental("thread/realtime/listVoices")]
     ThreadRealtimeListVoices => "thread/realtime/listVoices" {
         params: v2::ThreadRealtimeListVoicesParams,
@@ -1479,6 +1491,9 @@ server_notification_definitions! {
     /// This event is internal-only. Used by Codex Cloud.
     RawResponseItemCompleted => "rawResponseItem/completed" (v2::RawResponseItemCompletedNotification),
     AgentMessageDelta => "item/agentMessage/delta" (v2::AgentMessageDeltaNotification),
+    /// Streaming delta for a dynamic tool call's argument JSON. Clients
+    /// accumulate to render partial tool-call output before the tool call finalizes.
+    DynamicToolCallArgumentsDelta => "item/dynamicToolCall/argumentsDelta" (v2::DynamicToolCallArgumentsDeltaNotification),
     /// EXPERIMENTAL - proposed plan streaming deltas for plan items.
     PlanDelta => "item/plan/delta" (v2::PlanDeltaNotification),
     /// Stream base64-encoded stdout/stderr chunks for a running `command/exec` session.

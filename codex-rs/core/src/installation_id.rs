@@ -29,6 +29,10 @@ pub async fn resolve_installation_id(codex_home: &AbsolutePathBuf) -> Result<Str
         }
 
         let mut file = options.open(&path)?;
+        // Rust std's File::lock is not implemented for target_os = "android"
+        // and returns Unsupported("lock() not supported"). The mobile app is a
+        // single-process consumer of app-private storage, so skip the lock there.
+        #[cfg(not(target_os = "android"))]
         file.lock()?;
 
         #[cfg(unix)]

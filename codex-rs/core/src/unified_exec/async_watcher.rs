@@ -156,7 +156,7 @@ pub(crate) fn spawn_exit_watcher(
     });
 }
 
-async fn process_chunk(
+pub(crate) async fn process_chunk(
     pending: &mut Vec<u8>,
     transcript: &Arc<Mutex<HeadTailBuffer>>,
     call_id: &str,

@@ -94,6 +94,7 @@ use codex_protocol::protocol::AgentMessageContentDeltaEvent;
 use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
+use codex_protocol::protocol::DynamicToolCallArgumentsDeltaEvent;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::PlanDeltaEvent;
@@ -1551,6 +1552,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::HookStarted(_)
         | EventMsg::HookCompleted(_)
         | EventMsg::AgentMessageContentDelta(_)
+        | EventMsg::DynamicToolCallArgumentsDelta(_)
         | EventMsg::PlanDelta(_)
         | EventMsg::ReasoningContentDelta(_)
         | EventMsg::ReasoningRawContentDelta(_)
@@ -1926,6 +1928,7 @@ async fn try_run_sampling_request(
         String,
         Box<dyn ToolArgumentDiffConsumer>,
     )> = None;
+    let mut active_dynamic_tool_call: Option<(String, String)> = None;
     let mut should_emit_turn_diff = false;
     let mut should_emit_token_count = false;
     let reasoning_effort = turn_context.effective_reasoning_effort_for_tracing();
@@ -2073,13 +2076,25 @@ async fn try_run_sampling_request(
                 }
             }
             ResponseEvent::OutputItemAdded(item) => {
+                active_dynamic_tool_call = None;
                 if let ResponseItem::CustomToolCall { call_id, name, .. } = &item {
                     let tool_name = ToolName::plain(name.as_str());
                     active_tool_argument_diff_consumer = tool_runtime
                         .create_diff_consumer(&tool_name)
                         .map(|consumer| (call_id.clone(), consumer));
-                } else if matches!(&item, ResponseItem::FunctionCall { .. }) {
+                } else if let ResponseItem::FunctionCall {
+                    id, name, call_id, ..
+                } = &item
+                {
                     active_tool_argument_diff_consumer = None;
+                    if turn_context
+                        .dynamic_tools
+                        .iter()
+                        .any(|spec| spec.name == *name)
+                    {
+                        let item_id = id.clone().unwrap_or_default();
+                        active_dynamic_tool_call = Some((call_id.clone(), item_id));
+                    }
                 }
                 if let Some(turn_item) = handle_non_tool_response_item(
                     sess.as_ref(),
@@ -2241,17 +2256,37 @@ async fn try_run_sampling_request(
                 call_id,
                 delta,
             } => {
-                let Some((active_call_id, consumer)) = active_tool_argument_diff_consumer.as_mut()
-                else {
-                    continue;
-                };
-                let call_id = match call_id {
-                    Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
-                    Some(call_id) => call_id,
-                    None => active_call_id.clone(),
-                };
-                if let Some(event) = consumer.consume_diff(turn_context.as_ref(), call_id, &delta) {
-                    sess.send_event(&turn_context, event).await;
+                if let Some((active_call_id, consumer)) =
+                    active_tool_argument_diff_consumer.as_mut()
+                {
+                    let call_id = match call_id {
+                        Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
+                        Some(call_id) => call_id,
+                        None => active_call_id.clone(),
+                    };
+                    if let Some(event) =
+                        consumer.consume_diff(turn_context.as_ref(), call_id, &delta)
+                    {
+                        sess.send_event(&turn_context, event).await;
+                    }
+                } else if let Some((active_call_id, item_id)) = active_dynamic_tool_call.as_ref() {
+                    let matched_call_id = match call_id {
+                        Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
+                        Some(call_id) => Some(call_id),
+                        None => Some(active_call_id.clone()),
+                    };
+                    let event = DynamicToolCallArgumentsDeltaEvent {
+                        thread_id: sess.conversation_id.to_string(),
+                        turn_id: turn_context.sub_id.clone(),
+                        item_id: item_id.clone(),
+                        call_id: matched_call_id,
+                        delta,
+                    };
+                    sess.send_event(
+                        &turn_context,
+                        EventMsg::DynamicToolCallArgumentsDelta(event),
+                    )
+                    .await;
                 }
             }
             ResponseEvent::ReasoningSummaryDelta {

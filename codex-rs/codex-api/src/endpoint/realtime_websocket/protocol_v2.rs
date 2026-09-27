@@ -133,6 +133,18 @@ fn parse_conversation_item_done_event(parsed: &Value) -> Option<RealtimeEvent> {
         return Some(noop);
     }
 
+    // Emit ToolCallRequested for completed function_call items whose name is
+    // not the in-process background_agent tool. The bespoke layer routes
+    // these to the client via the existing DynamicToolCall server-request flow.
+    if item.get("type").and_then(Value::as_str) == Some("function_call")
+        && item.get("status").and_then(Value::as_str) == Some("completed")
+        && item.get("name").and_then(Value::as_str) != Some(BACKGROUND_AGENT_TOOL_NAME)
+    {
+        return Some(RealtimeEvent::ToolCallRequested(Value::Object(
+            item.clone(),
+        )));
+    }
+
     item.get("id")
         .and_then(Value::as_str)
         .map(str::to_string)
@@ -157,11 +169,24 @@ fn parse_handoff_requested_event(item: &JsonMap<String, Value>) -> Option<Realti
         .to_string();
     let arguments = item.get("arguments").and_then(Value::as_str).unwrap_or("");
 
+    let server = serde_json::from_str::<Value>(arguments)
+        .ok()
+        .as_ref()
+        .and_then(|parsed| {
+            parsed
+                .get("server")
+                .or_else(|| parsed.get("server_hint"))
+                .or_else(|| parsed.get("serverHint"))
+        })
+        .and_then(Value::as_str)
+        .map(str::to_string);
+
     Some(RealtimeEvent::HandoffRequested(RealtimeHandoffRequested {
         handoff_id: call_id.to_string(),
         item_id,
         input_transcript: extract_input_transcript(arguments),
         active_transcript: Vec::new(),
+        server,
     }))
 }
 

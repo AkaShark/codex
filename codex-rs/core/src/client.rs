@@ -518,6 +518,7 @@ impl ModelClient {
         &self,
         sdp: String,
         session_config: ApiRealtimeSessionConfig,
+        api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
         mut extra_headers: ApiHeaderMap,
     ) -> Result<RealtimeWebrtcCallStart> {
         // Create the media call over HTTP first, then retain matching auth so realtime can attach
@@ -531,11 +532,40 @@ impl ModelClient {
             client_setup.api_auth.as_ref(),
         ));
         let transport = ReqwestTransport::new(build_reqwest_client());
-        let response =
-            ApiRealtimeCallClient::new(transport, client_setup.api_provider, client_setup.api_auth)
-                .create_with_session_and_headers(sdp, session_config, extra_headers)
-                .await
-                .map_err(map_api_error)?;
+        let response = match ApiRealtimeCallClient::new(
+            transport,
+            client_setup.api_provider,
+            client_setup.api_auth,
+        )
+        .create_with_session_and_headers(
+            sdp.clone(),
+            session_config.clone(),
+            extra_headers.clone(),
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(err) => {
+                let mapped_error = map_api_error(err);
+                let Some((api_provider, api_auth)) = api_fallback else {
+                    return Err(mapped_error);
+                };
+                warn!(
+                    error = %mapped_error,
+                    "realtime WebRTC call creation failed with current auth; retrying with API key"
+                );
+                let mut fallback_sideband_headers = extra_headers.clone();
+                fallback_sideband_headers
+                    .extend(sideband_websocket_auth_headers(api_auth.as_ref()));
+                let transport = ReqwestTransport::new(build_reqwest_client());
+                let response = ApiRealtimeCallClient::new(transport, api_provider, api_auth)
+                    .create_with_session_and_headers(sdp, session_config, extra_headers)
+                    .await
+                    .map_err(map_api_error)?;
+                sideband_headers = fallback_sideband_headers;
+                response
+            }
+        };
         Ok(RealtimeWebrtcCallStart {
             sdp: response.sdp,
             call_id: response.call_id,

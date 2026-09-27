@@ -19,6 +19,7 @@ use codex_api::RealtimeSessionMode;
 use codex_api::RealtimeWebsocketClient;
 use codex_api::RealtimeWebsocketEvents;
 use codex_api::RealtimeWebsocketWriter;
+use codex_api::SharedAuthProvider;
 use codex_api::map_api_error;
 use codex_app_server_protocol::AuthMode;
 use codex_config::config_toml::RealtimeWsMode;
@@ -26,6 +27,7 @@ use codex_config::config_toml::RealtimeWsVersion;
 use codex_login::CodexAuth;
 use codex_login::default_client::default_headers;
 use codex_login::read_openai_api_key_from_env;
+use codex_model_provider::BearerAuthProvider;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
@@ -114,6 +116,10 @@ enum HandoffOutput {
         handoff_id: String,
         output_text: String,
     },
+    DynamicToolOutput {
+        call_id: String,
+        output_text: String,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -194,12 +200,14 @@ struct RealtimeInputTask {
     handoff_state: RealtimeHandoffState,
     session_kind: RealtimeSessionKind,
     event_parser: RealtimeEventParser,
+    finalize_rx: Receiver<()>,
 }
 
 struct RealtimeInputChannels {
     user_text_rx: Receiver<String>,
     handoff_output_rx: Receiver<HandoffOutput>,
     audio_rx: Receiver<RealtimeAudioFrame>,
+    finalize_rx: Receiver<()>,
 }
 
 impl RealtimeHandoffState {
@@ -222,14 +230,18 @@ struct ConversationState {
     input_task: JoinHandle<()>,
     fanout_task: Option<JoinHandle<()>>,
     realtime_active: Arc<AtomicBool>,
+    client_controlled_handoff: bool,
+    finalize_tx: Sender<()>,
 }
 
 struct RealtimeStart {
     api_provider: ApiProvider,
+    webrtc_api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
     extra_headers: Option<HeaderMap>,
     session_config: RealtimeSessionConfig,
     model_client: ModelClient,
     sdp: Option<String>,
+    client_controlled_handoff: bool,
 }
 
 struct RealtimeStartOutput {
@@ -278,10 +290,12 @@ impl RealtimeConversationManager {
     async fn start_inner(&self, start: RealtimeStart) -> CodexResult<RealtimeStartOutput> {
         let RealtimeStart {
             api_provider,
+            webrtc_api_fallback,
             extra_headers,
             session_config,
             model_client,
             sdp,
+            client_controlled_handoff,
         } = start;
         let event_parser = session_config.event_parser;
         let session_kind = match event_parser {
@@ -297,6 +311,7 @@ impl RealtimeConversationManager {
             async_channel::bounded::<HandoffOutput>(HANDOFF_OUT_QUEUE_CAPACITY);
         let (events_tx, events_rx) =
             async_channel::bounded::<RealtimeEvent>(OUTPUT_EVENTS_QUEUE_CAPACITY);
+        let (finalize_tx, finalize_rx) = async_channel::bounded::<()>(4);
 
         let realtime_active = Arc::new(AtomicBool::new(true));
         let handoff = RealtimeHandoffState::new(handoff_output_tx, session_kind);
@@ -304,6 +319,7 @@ impl RealtimeConversationManager {
             user_text_rx,
             handoff_output_rx,
             audio_rx,
+            finalize_rx,
         };
 
         let client = RealtimeWebsocketClient::new(api_provider);
@@ -312,6 +328,7 @@ impl RealtimeConversationManager {
                 .create_realtime_call_with_headers(
                     sdp,
                     session_config.clone(),
+                    webrtc_api_fallback,
                     extra_headers.unwrap_or_default(),
                 )
                 .await?;
@@ -347,6 +364,7 @@ impl RealtimeConversationManager {
                 handoff_state: handoff.clone(),
                 session_kind,
                 event_parser,
+                finalize_rx: input_channels.finalize_rx,
             });
             (task, None)
         };
@@ -360,6 +378,8 @@ impl RealtimeConversationManager {
             input_task: task,
             fanout_task: None,
             realtime_active: Arc::clone(&realtime_active),
+            client_controlled_handoff,
+            finalize_tx,
         });
         Ok(RealtimeStartOutput {
             realtime_active,
@@ -481,6 +501,56 @@ impl RealtimeConversationManager {
         Ok(())
     }
 
+    pub(crate) async fn resolve_realtime_dynamic_tool(&self, call_id: String, output_text: String) {
+        let guard = self.state.lock().await;
+        if let Some(state) = guard.as_ref() {
+            let _ = state
+                .handoff
+                .output_tx
+                .send(HandoffOutput::DynamicToolOutput {
+                    call_id,
+                    output_text,
+                })
+                .await;
+        }
+    }
+
+    pub(crate) async fn is_client_controlled_handoff(&self) -> bool {
+        let guard = self.state.lock().await;
+        guard
+            .as_ref()
+            .map(|s| s.client_controlled_handoff)
+            .unwrap_or(false)
+    }
+
+    pub(crate) async fn resolve_handoff(&self, tool_call_output: String) {
+        let guard = self.state.lock().await;
+        if let Some(state) = guard.as_ref() {
+            let handoff_id = state
+                .handoff
+                .active_handoff
+                .lock()
+                .await
+                .clone()
+                .unwrap_or_default();
+            let _ = state
+                .handoff
+                .output_tx
+                .send(HandoffOutput::FinalUpdate {
+                    handoff_id,
+                    output_text: tool_call_output,
+                })
+                .await;
+        }
+    }
+
+    pub(crate) async fn finalize_handoff(&self) {
+        let guard = self.state.lock().await;
+        if let Some(state) = guard.as_ref() {
+            let _ = state.finalize_tx.send(()).await;
+        }
+    }
+
     pub(crate) async fn handoff_complete(&self) -> CodexResult<()> {
         let handoff = {
             let guard = self.state.lock().await;
@@ -599,11 +669,13 @@ pub(crate) async fn handle_start(
 
 struct PreparedRealtimeConversationStart {
     api_provider: ApiProvider,
+    webrtc_api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
     extra_headers: Option<HeaderMap>,
     requested_realtime_session_id: Option<String>,
     version: RealtimeWsVersion,
     session_config: RealtimeSessionConfig,
     transport: ConversationStartTransport,
+    client_controlled_handoff: bool,
 }
 
 async fn prepare_realtime_start(
@@ -622,6 +694,7 @@ async fn prepare_realtime_start(
         .transport
         .unwrap_or(ConversationStartTransport::Websocket);
     let mut api_provider = provider.to_api_provider(Some(AuthMode::ApiKey))?;
+    let call_api_provider = api_provider.clone();
     if let Some(realtime_ws_base_url) = &config.experimental_realtime_ws_base_url {
         api_provider.base_url = realtime_ws_base_url.clone();
     }
@@ -632,31 +705,54 @@ async fn prepare_realtime_start(
         params.realtime_session_id,
         params.output_modality,
         params.voice,
+        params.dynamic_tools,
     )
     .await?;
     let requested_realtime_session_id = session_config.session_id.clone();
-    let extra_headers = match transport {
+    let (extra_headers, webrtc_api_fallback) = match transport {
         ConversationStartTransport::Websocket => {
             let realtime_api_key = realtime_api_key(auth.as_ref(), &provider)?;
-            realtime_request_headers(
-                requested_realtime_session_id.as_deref(),
-                Some(realtime_api_key.as_str()),
-            )?
+            (
+                realtime_request_headers(
+                    requested_realtime_session_id.as_deref(),
+                    Some(realtime_api_key.as_str()),
+                )?,
+                None,
+            )
         }
         ConversationStartTransport::Webrtc { .. } => {
-            realtime_request_headers(
-                requested_realtime_session_id.as_deref(),
-                /*api_key*/ None,
-            )?
+            let realtime_api_key = realtime_api_key(auth.as_ref(), &provider).ok();
+            let current_auth_uses_codex_backend = matches!(
+                auth.as_ref().map(CodexAuth::auth_mode),
+                Some(AuthMode::Chatgpt | AuthMode::ChatgptAuthTokens | AuthMode::AgentIdentity)
+            );
+            let webrtc_api_fallback = if current_auth_uses_codex_backend {
+                realtime_api_key.as_ref().map(|api_key| {
+                    let api_auth: SharedAuthProvider =
+                        Arc::new(BearerAuthProvider::new(api_key.clone()));
+                    (call_api_provider.clone(), api_auth)
+                })
+            } else {
+                None
+            };
+            (
+                realtime_request_headers(
+                    requested_realtime_session_id.as_deref(),
+                    realtime_api_key.as_deref(),
+                )?,
+                webrtc_api_fallback,
+            )
         }
     };
     Ok(PreparedRealtimeConversationStart {
         api_provider,
+        webrtc_api_fallback,
         extra_headers,
         requested_realtime_session_id,
         version,
         session_config,
         transport,
+        client_controlled_handoff: params.client_controlled_handoff,
     })
 }
 
@@ -666,6 +762,7 @@ pub(crate) async fn build_realtime_session_config(
     realtime_session_id: Option<String>,
     output_modality: RealtimeOutputModality,
     voice: Option<RealtimeVoice>,
+    dynamic_tools: Option<Vec<codex_protocol::dynamic_tools::DynamicToolSpec>>,
 ) -> CodexResult<RealtimeSessionConfig> {
     let config = sess.get_config().await;
     let prompt = prepare_realtime_backend_prompt(
@@ -719,6 +816,7 @@ pub(crate) async fn build_realtime_session_config(
         session_mode,
         output_modality,
         voice,
+        dynamic_tools,
     })
 }
 
@@ -773,11 +871,13 @@ async fn handle_start_inner(
 ) -> CodexResult<()> {
     let PreparedRealtimeConversationStart {
         api_provider,
+        webrtc_api_fallback,
         extra_headers,
         requested_realtime_session_id,
         version,
         session_config,
         transport,
+        client_controlled_handoff,
     } = prepared_start;
     info!("starting realtime conversation");
     let sdp = match transport {
@@ -786,10 +886,12 @@ async fn handle_start_inner(
     };
     let start = RealtimeStart {
         api_provider,
+        webrtc_api_fallback,
         extra_headers,
         session_config,
         model_client: sess.services.model_client.clone(),
         sdp,
+        client_controlled_handoff,
     };
     let start_output = sess.conversation.start(start).await?;
 
@@ -842,16 +944,21 @@ async fn handle_start_inner(
             if let RealtimeEvent::Error(_) = &event {
                 end = RealtimeConversationEnd::Error;
             }
-            let maybe_routed_text = match &event {
-                RealtimeEvent::HandoffRequested(handoff) => {
-                    realtime_delegation_from_handoff(handoff)
+            // Skip auto-route when the client opted into client-controlled handoff:
+            // the handoff event is forwarded to the client, which resolves it via
+            // RealtimeConversationResolveHandoff/FinalizeHandoff.
+            if !sess_clone.conversation.is_client_controlled_handoff().await {
+                let maybe_routed_text = match &event {
+                    RealtimeEvent::HandoffRequested(handoff) => {
+                        realtime_delegation_from_handoff(handoff)
+                    }
+                    _ => None,
+                };
+                if let Some(text) = maybe_routed_text {
+                    debug!(text = %text, "[realtime-text] realtime conversation text output");
+                    let sess_for_routed_text = Arc::clone(&sess_clone);
+                    sess_for_routed_text.route_realtime_text_input(text).await;
                 }
-                _ => None,
-            };
-            if let Some(text) = maybe_routed_text {
-                debug!(text = %text, "[realtime-text] realtime conversation text output");
-                let sess_for_routed_text = Arc::clone(&sess_clone);
-                sess_for_routed_text.route_realtime_text_input(text).await;
             }
             if !fanout_realtime_active.load(Ordering::Relaxed) {
                 break;
@@ -1085,6 +1192,7 @@ fn spawn_webrtc_sideband_input_task(input: RealtimeWebrtcSidebandInputTask) -> J
             handoff_state,
             session_kind,
             event_parser,
+            finalize_rx: input_channels.finalize_rx,
         })
         .await;
     })
@@ -1101,6 +1209,7 @@ async fn run_realtime_input_task(input: RealtimeInputTask) {
         handoff_state,
         session_kind,
         event_parser,
+        finalize_rx,
     } = input;
 
     let mut output_audio_state: Option<OutputAudioState> = None;
@@ -1146,6 +1255,25 @@ async fn run_realtime_input_task(input: RealtimeInputTask) {
             user_audio_frame = audio_rx.recv() => {
                 handle_user_audio_input(user_audio_frame, &writer, &events_tx)
                     .await
+            }
+            // Finalize signal: client-controlled handoff resolution complete; trigger response.create.
+            finalize = finalize_rx.recv() => {
+                if finalize.is_err() {
+                    continue;
+                }
+                if matches!(session_kind, RealtimeSessionKind::V2) {
+                    if let Err(err) = response_create_queue
+                        .request_create(&writer, &events_tx, "finalize_handoff")
+                        .await
+                    {
+                        warn!("failed to send finalize response.create: {err}");
+                        Err(err)
+                    } else {
+                        Ok(())
+                    }
+                } else {
+                    Ok(())
+                }
             }
         };
         if result.is_err() {
@@ -1196,6 +1324,14 @@ async fn handle_handoff_output(
                     .send_conversation_function_call_output(handoff_id, output_text)
                     .await
             }
+            HandoffOutput::DynamicToolOutput {
+                call_id,
+                output_text,
+            } => {
+                writer
+                    .send_conversation_function_call_output(call_id, output_text)
+                    .await
+            }
         },
         RealtimeEventParser::RealtimeV2 => match handoff_output {
             HandoffOutput::ProgressUpdate {
@@ -1227,6 +1363,21 @@ async fn handle_handoff_output(
                 } else {
                     return response_create_queue
                         .request_create(writer, events_tx, "handoff")
+                        .await;
+                }
+            }
+            HandoffOutput::DynamicToolOutput {
+                call_id,
+                output_text,
+            } => {
+                if let Err(err) = writer
+                    .send_conversation_function_call_output(call_id, output_text)
+                    .await
+                {
+                    Err(err)
+                } else {
+                    return response_create_queue
+                        .request_create(writer, events_tx, "dynamic_tool")
                         .await;
                 }
             }
@@ -1415,6 +1566,19 @@ async fn handle_realtime_server_event(
         | RealtimeEvent::OutputTranscriptDone(_)
         | RealtimeEvent::ConversationItemAdded(_)
         | RealtimeEvent::ConversationItemDone { .. } => false,
+        RealtimeEvent::ToolCallRequested(_) => {
+            // Realtime V2 dynamic tool calls are surfaced via the normal
+            // conversation-item pipeline. Clear output audio state so the
+            // follow-up response.create after the tool output is returned
+            // is not suppressed.
+            *output_audio_state = None;
+            if matches!(session_kind, RealtimeSessionKind::V2) {
+                response_create_queue
+                    .mark_finished(writer, events_tx, "tool_call")
+                    .await?;
+            }
+            false
+        }
     };
 
     if events_tx.send(event).await.is_err() {

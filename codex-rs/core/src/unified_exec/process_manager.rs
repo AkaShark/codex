@@ -40,6 +40,8 @@ use crate::unified_exec::UnifiedExecProcessManager;
 use crate::unified_exec::WriteStdinRequest;
 use crate::unified_exec::async_watcher::emit_exec_end_for_unified_exec;
 use crate::unified_exec::async_watcher::emit_failed_exec_end_for_unified_exec;
+#[cfg(target_os = "ios")]
+use crate::unified_exec::async_watcher::process_chunk;
 use crate::unified_exec::async_watcher::spawn_exit_watcher;
 use crate::unified_exec::async_watcher::start_streaming_output;
 use crate::unified_exec::clamp_yield_time;
@@ -372,6 +374,12 @@ impl UnifiedExecProcessManager {
         context: &UnifiedExecContext,
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
         let cwd = request.cwd.clone();
+        #[cfg(target_os = "ios")]
+        {
+            return self.exec_command_ios(&request, cwd, context).await;
+        }
+
+        #[allow(unreachable_code)]
         let process = self
             .open_session_with_sandbox(&request, cwd.clone(), context)
             .await;
@@ -589,6 +597,128 @@ impl UnifiedExecProcessManager {
         };
 
         Ok(response)
+    }
+
+    #[cfg(target_os = "ios")]
+    async fn exec_command_ios(
+        &self,
+        request: &ExecCommandRequest,
+        cwd: codex_utils_absolute_path::AbsolutePathBuf,
+        context: &UnifiedExecContext,
+    ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
+        use crate::exec::IOS_EXEC_HOOK;
+        use crate::exec::IOS_STREAMING_EXEC_HOOK;
+        use crate::exec::IosExecOutputHandler;
+        use crate::exec::MOBILE_EXEC_PREFLIGHT;
+
+        let event_ctx = ToolEventCtx::new(
+            context.session.as_ref(),
+            context.turn.as_ref(),
+            &context.call_id,
+            None,
+        );
+        let emitter = ToolEmitter::unified_exec(
+            &request.command,
+            cwd.clone(),
+            ExecCommandSource::UnifiedExecStartup,
+            Some(request.process_id.to_string()),
+        );
+        emitter.emit(event_ctx, ToolEventStage::Begin).await;
+
+        let env = create_env(
+            &context.turn.shell_environment_policy,
+            Some(context.session.conversation_id),
+        );
+        let start = Instant::now();
+        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
+        let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let output_handler: IosExecOutputHandler = Arc::new(move |chunk| {
+            let _ = chunk_tx.send(chunk);
+        });
+        let mut join = tokio::task::spawn_blocking({
+            let mut command = request.command.clone();
+            let cwd = cwd.clone();
+            let output_handler = Arc::clone(&output_handler);
+            move || {
+                if let Some(preflight) = MOBILE_EXEC_PREFLIGHT.get() {
+                    preflight(&mut command);
+                }
+                if let Some(streaming_hook) = IOS_STREAMING_EXEC_HOOK.get() {
+                    streaming_hook(&command, &cwd, &env, None, output_handler)
+                } else {
+                    IOS_EXEC_HOOK
+                        .get()
+                        .map(|f| f(&command, &cwd, &env, None))
+                        .unwrap_or((-1, b"no iOS exec hook registered\n".to_vec()))
+                }
+            }
+        });
+
+        let mut pending = Vec::<u8>::new();
+        let mut emitted_deltas: usize = 0;
+        let (exit_code, raw_output) = loop {
+            tokio::select! {
+                maybe_chunk = chunk_rx.recv() => {
+                    if let Some(chunk) = maybe_chunk {
+                        process_chunk(
+                            &mut pending,
+                            &transcript,
+                            &context.call_id,
+                            &context.session,
+                            &context.turn,
+                            &mut emitted_deltas,
+                            chunk,
+                        ).await;
+                    }
+                }
+                result = &mut join => {
+                    break result.unwrap_or((-1, b"spawn_blocking panicked\n".to_vec()));
+                }
+            }
+        };
+        while let Ok(chunk) = chunk_rx.try_recv() {
+            process_chunk(
+                &mut pending,
+                &transcript,
+                &context.call_id,
+                &context.session,
+                &context.turn,
+                &mut emitted_deltas,
+                chunk,
+            )
+            .await;
+        }
+        let wall_time = Instant::now().saturating_duration_since(start);
+
+        let text = String::from_utf8_lossy(&raw_output).to_string();
+        emit_exec_end_for_unified_exec(
+            Arc::clone(&context.session),
+            Arc::clone(&context.turn),
+            context.call_id.clone(),
+            request.command.clone(),
+            cwd,
+            Some(request.process_id.to_string()),
+            transcript,
+            text.clone(),
+            exit_code,
+            wall_time,
+        )
+        .await;
+
+        self.release_process_id(request.process_id).await;
+
+        let original_token_count = approx_token_count(&text);
+        Ok(ExecCommandToolOutput {
+            event_call_id: context.call_id.clone(),
+            chunk_id: generate_chunk_id(),
+            wall_time,
+            raw_output,
+            max_output_tokens: request.max_output_tokens,
+            process_id: None,
+            exit_code: Some(exit_code),
+            original_token_count: Some(original_token_count),
+            hook_command: Some(request.hook_command.clone()),
+        })
     }
 
     pub(crate) async fn write_stdin(

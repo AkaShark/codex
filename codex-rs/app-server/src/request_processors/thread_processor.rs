@@ -1915,7 +1915,21 @@ impl ThreadRequestProcessor {
             .read_thread_view(thread_uuid, include_turns)
             .await
             .map_err(thread_read_view_error)?;
-        Ok(ThreadReadResponse { thread })
+        let live_config_snapshot =
+            if let Ok(thread) = self.thread_manager.get_thread(thread_uuid).await {
+                Some(thread.config_snapshot().await)
+            } else {
+                None
+            };
+        Ok(ThreadReadResponse {
+            thread,
+            approval_policy: live_config_snapshot
+                .as_ref()
+                .map(|config| config.approval_policy.into()),
+            sandbox: live_config_snapshot
+                .as_ref()
+                .map(|config| config.sandbox_policy().into()),
+        })
     }
 
     /// Builds the API view for `thread/read` from persisted metadata plus optional live state.

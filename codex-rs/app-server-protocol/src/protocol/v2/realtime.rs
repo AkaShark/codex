@@ -1,3 +1,4 @@
+use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::protocol::RealtimeAudioFrame as CoreRealtimeAudioFrame;
 use codex_protocol::protocol::RealtimeConversationVersion;
 use codex_protocol::protocol::RealtimeOutputModality;
@@ -82,6 +83,11 @@ pub struct ThreadRealtimeStartParams {
     pub transport: Option<ThreadRealtimeStartTransport>,
     #[ts(optional = nullable)]
     pub voice: Option<RealtimeVoice>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub client_controlled_handoff: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
 }
 
 /// EXPERIMENTAL - transport used by thread realtime.
@@ -146,6 +152,35 @@ pub struct ThreadRealtimeStopParams {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadRealtimeStopResponse {}
+
+/// EXPERIMENTAL - resolve a client-controlled handoff with tool output.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRealtimeResolveHandoffParams {
+    pub thread_id: String,
+    pub tool_call_output: String,
+}
+
+/// EXPERIMENTAL - response for resolving a handoff.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRealtimeResolveHandoffResponse {}
+
+/// EXPERIMENTAL - finalize a resolved handoff (triggers response.create for V2).
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRealtimeFinalizeHandoffParams {
+    pub thread_id: String,
+}
+
+/// EXPERIMENTAL - response for finalizing a handoff.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRealtimeFinalizeHandoffResponse {}
 
 /// EXPERIMENTAL - list voices supported by thread realtime.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]

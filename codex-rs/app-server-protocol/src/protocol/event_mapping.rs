@@ -7,6 +7,7 @@ use crate::protocol::v2::CollabAgentState;
 use crate::protocol::v2::CollabAgentTool;
 use crate::protocol::v2::CollabAgentToolCallStatus;
 use crate::protocol::v2::CommandExecutionOutputDeltaNotification;
+use crate::protocol::v2::DynamicToolCallArgumentsDeltaNotification;
 use crate::protocol::v2::DynamicToolCallOutputContentItem;
 use crate::protocol::v2::DynamicToolCallStatus;
 use crate::protocol::v2::FileChangePatchUpdatedNotification;
@@ -351,6 +352,17 @@ pub fn item_event_to_server_notification(
                 item_id,
                 delta,
             })
+        }
+        EventMsg::DynamicToolCallArgumentsDelta(event) => {
+            ServerNotification::DynamicToolCallArgumentsDelta(
+                DynamicToolCallArgumentsDeltaNotification {
+                    thread_id,
+                    turn_id,
+                    item_id: event.item_id,
+                    call_id: event.call_id,
+                    delta: event.delta,
+                },
+            )
         }
         EventMsg::PlanDelta(event) => ServerNotification::PlanDelta(PlanDeltaNotification {
             thread_id,

@@ -315,6 +315,7 @@ impl RealtimeWebsocketWriter {
         session_mode: RealtimeSessionMode,
         output_modality: RealtimeOutputModality,
         voice: RealtimeVoice,
+        dynamic_tools: Option<Vec<codex_protocol::dynamic_tools::DynamicToolSpec>>,
     ) -> Result<(), ApiError> {
         let session_mode = normalized_session_mode(self.event_parser, session_mode);
         let session = session_update_session(
@@ -323,6 +324,7 @@ impl RealtimeWebsocketWriter {
             session_mode,
             output_modality,
             voice,
+            dynamic_tools,
         );
         self.send_json(&RealtimeOutboundMessage::SessionUpdate { session })
             .await
@@ -477,6 +479,7 @@ impl RealtimeWebsocketEvents {
             | RealtimeEvent::ConversationItemDone { .. }
             | RealtimeEvent::NoopRequested(_)
             | RealtimeEvent::ConversationItemAdded(_)
+            | RealtimeEvent::ToolCallRequested(_)
             | RealtimeEvent::Error(_) => {}
         }
     }
@@ -687,6 +690,7 @@ impl RealtimeWebsocketClient {
                 config.session_mode,
                 config.output_modality,
                 config.voice,
+                config.dynamic_tools,
             )
             .await?;
         Ok(connection)

@@ -167,6 +167,10 @@ pub struct ConversationStartParams {
     pub transport: Option<ConversationStartTransport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice: Option<RealtimeVoice>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub client_controlled_handoff: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic_tools: Option<Vec<crate::dynamic_tools::DynamicToolSpec>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
@@ -334,6 +338,8 @@ pub struct RealtimeHandoffRequested {
     pub item_id: String,
     pub input_transcript: String,
     pub active_transcript: Vec<RealtimeTranscriptEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -383,6 +389,7 @@ pub enum RealtimeEvent {
     },
     HandoffRequested(RealtimeHandoffRequested),
     NoopRequested(RealtimeNoopRequested),
+    ToolCallRequested(Value),
     Error(String),
 }
 
@@ -421,6 +428,20 @@ pub enum Op {
 
     /// Close the running realtime conversation stream.
     RealtimeConversationClose,
+
+    /// Resolve a handoff request with tool output (client-controlled handoff).
+    /// Sends `function_call_output` for the active handoff but does NOT trigger
+    /// `response.create` — pair with `RealtimeConversationFinalizeHandoff` when
+    /// all tool outputs are queued and the model should continue speaking.
+    RealtimeConversationResolveHandoff { tool_call_output: String },
+
+    /// Finalize a resolved handoff: triggers `response.create` for V2.
+    RealtimeConversationFinalizeHandoff,
+
+    /// Resolve a dynamic tool call from the realtime conversation with output text.
+    /// The output is sent to the realtime API as `function_call_output` and a
+    /// `response.create` is queued so the model continues speaking.
+    RealtimeResolveDynamicTool { call_id: String, output: String },
 
     /// Request the list of voices supported by realtime conversation streams.
     RealtimeConversationListVoices,
@@ -854,6 +875,11 @@ impl Op {
             Self::RealtimeConversationAudio(_) => "realtime_conversation_audio",
             Self::RealtimeConversationText(_) => "realtime_conversation_text",
             Self::RealtimeConversationClose => "realtime_conversation_close",
+            Self::RealtimeConversationResolveHandoff { .. } => {
+                "realtime_conversation_resolve_handoff"
+            }
+            Self::RealtimeConversationFinalizeHandoff => "realtime_conversation_finalize_handoff",
+            Self::RealtimeResolveDynamicTool { .. } => "realtime_resolve_dynamic_tool",
             Self::RealtimeConversationListVoices => "realtime_conversation_list_voices",
             Self::UserInput { .. } => "user_input",
             Self::UserInputWithTurnContext { .. } => "user_input_with_turn_context",
@@ -1433,6 +1459,7 @@ pub enum EventMsg {
     HookCompleted(HookCompletedEvent),
 
     AgentMessageContentDelta(AgentMessageContentDeltaEvent),
+    DynamicToolCallArgumentsDelta(DynamicToolCallArgumentsDeltaEvent),
     PlanDelta(PlanDeltaEvent),
     ReasoningContentDelta(ReasoningContentDeltaEvent),
     ReasoningRawContentDelta(ReasoningRawContentDeltaEvent),
@@ -1832,6 +1859,17 @@ pub struct AgentMessageContentDeltaEvent {
     pub thread_id: String,
     pub turn_id: String,
     pub item_id: String,
+    pub delta: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
+pub struct DynamicToolCallArgumentsDeltaEvent {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub call_id: Option<String>,
     pub delta: String,
 }
 

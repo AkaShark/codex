@@ -20,7 +20,7 @@ pub enum RealtimeSessionMode {
     Transcription,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RealtimeSessionConfig {
     pub instructions: String,
     pub model: Option<String>,
@@ -29,6 +29,7 @@ pub struct RealtimeSessionConfig {
     pub session_mode: RealtimeSessionMode,
     pub output_modality: RealtimeOutputModality,
     pub voice: RealtimeVoice,
+    pub dynamic_tools: Option<Vec<codex_protocol::dynamic_tools::DynamicToolSpec>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

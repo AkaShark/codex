@@ -25,6 +25,7 @@ use crate::endpoint::realtime_websocket::protocol::SessionTurnDetection;
 use crate::endpoint::realtime_websocket::protocol::SessionType;
 use crate::endpoint::realtime_websocket::protocol::SessionUpdateSession;
 use crate::endpoint::realtime_websocket::protocol::TurnDetectionType;
+use codex_protocol::dynamic_tools::DynamicToolSpec;
 use serde_json::json;
 
 const REALTIME_V2_OUTPUT_MODALITY_AUDIO: &str = "audio";
@@ -67,6 +68,7 @@ pub(super) fn session_update_session(
     session_mode: RealtimeSessionMode,
     output_modality: RealtimeOutputModality,
     voice: RealtimeVoice,
+    dynamic_tools: Option<Vec<DynamicToolSpec>>,
 ) -> SessionUpdateSession {
     match session_mode {
         RealtimeSessionMode::Conversational => SessionUpdateSession {
@@ -102,34 +104,7 @@ pub(super) fn session_update_session(
                     voice,
                 }),
             },
-            tools: Some(vec![
-                SessionFunctionTool {
-                    r#type: SessionToolType::Function,
-                    name: REALTIME_V2_BACKGROUND_AGENT_TOOL_NAME.to_string(),
-                    description: REALTIME_V2_BACKGROUND_AGENT_TOOL_DESCRIPTION.to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "prompt": {
-                                "type": "string",
-                                "description": "The user request to delegate to the background agent."
-                            }
-                        },
-                        "required": ["prompt"],
-                        "additionalProperties": false
-                    }),
-                },
-                SessionFunctionTool {
-                    r#type: SessionToolType::Function,
-                    name: REALTIME_V2_SILENCE_TOOL_NAME.to_string(),
-                    description: REALTIME_V2_SILENCE_TOOL_DESCRIPTION.to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": false
-                    }),
-                },
-            ]),
+            tools: Some(realtime_v2_session_tools(dynamic_tools)),
             tool_choice: Some(REALTIME_V2_TOOL_CHOICE.to_string()),
         },
         RealtimeSessionMode::Transcription => SessionUpdateSession {
@@ -156,6 +131,52 @@ pub(super) fn session_update_session(
             tool_choice: None,
         },
     }
+}
+
+pub(super) fn realtime_v2_session_tools(
+    dynamic_tools: Option<Vec<DynamicToolSpec>>,
+) -> Vec<SessionFunctionTool> {
+    let mut tools = vec![
+        SessionFunctionTool {
+            r#type: SessionToolType::Function,
+            name: REALTIME_V2_BACKGROUND_AGENT_TOOL_NAME.to_string(),
+            description: REALTIME_V2_BACKGROUND_AGENT_TOOL_DESCRIPTION.to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The user request to delegate to the background agent."
+                    },
+                    "server": {
+                        "type": "string",
+                        "description": "Target server identifier for routing the handoff."
+                    }
+                },
+                "required": ["prompt", "server"],
+                "additionalProperties": false
+            }),
+        },
+        SessionFunctionTool {
+            r#type: SessionToolType::Function,
+            name: REALTIME_V2_SILENCE_TOOL_NAME.to_string(),
+            description: REALTIME_V2_SILENCE_TOOL_DESCRIPTION.to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        },
+    ];
+    if let Some(dynamic_tools) = dynamic_tools {
+        tools.extend(dynamic_tools.into_iter().map(|tool| SessionFunctionTool {
+            r#type: SessionToolType::Function,
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.input_schema,
+        }));
+    }
+    tools
 }
 
 fn output_modality_value(output_modality: RealtimeOutputModality) -> &'static str {

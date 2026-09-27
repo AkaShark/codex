@@ -1197,6 +1197,16 @@ impl MessageProcessor {
                     .thread_realtime_stop(&request_id, params)
                     .await
             }
+            ClientRequest::ThreadRealtimeResolveHandoff { params, .. } => {
+                self.turn_processor
+                    .thread_realtime_resolve_handoff(&request_id, params)
+                    .await
+            }
+            ClientRequest::ThreadRealtimeFinalizeHandoff { params, .. } => {
+                self.turn_processor
+                    .thread_realtime_finalize_handoff(&request_id, params)
+                    .await
+            }
             ClientRequest::ThreadRealtimeListVoices { params: _, .. } => {
                 self.turn_processor.thread_realtime_list_voices().await
             }
