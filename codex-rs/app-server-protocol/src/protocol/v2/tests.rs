@@ -56,6 +56,34 @@ fn test_absolute_path() -> AbsolutePathBuf {
 }
 
 #[test]
+fn sleep_items_round_trip_in_history_and_notifications() {
+    let wire = json!({"type": "sleep", "id": "wait_1", "durationMs": 60000});
+    let expected = ThreadItem::Sleep {
+        id: "wait_1".to_string(),
+        duration_ms: 60000,
+    };
+    let item: ThreadItem = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(item, expected);
+    assert_eq!(item.id(), "wait_1");
+    assert_eq!(serde_json::to_value(&item).unwrap(), wire);
+
+    for (method, timestamp) in [
+        ("item/started", "startedAtMs"),
+        ("item/completed", "completedAtMs"),
+    ] {
+        let mut params = json!({"threadId": "thread_1", "turnId": "turn_1", "item": wire});
+        params[timestamp] = json!(1790967600000_i64);
+        let notification = json!({
+            "method": method,
+            "params": params,
+        });
+        let parsed: crate::ServerNotification =
+            serde_json::from_value(notification.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(), notification);
+    }
+}
+
+#[test]
 fn approvals_reviewer_serializes_auto_review_and_accepts_legacy_guardian_subagent() {
     assert_eq!(
         serde_json::to_string(&ApprovalsReviewer::User).expect("serialize reviewer"),

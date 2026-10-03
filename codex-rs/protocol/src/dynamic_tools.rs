@@ -7,8 +7,12 @@ use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+// Realtime requests also expose this core type beside the distinct app-server
+// DynamicToolSpec. Give their JSON schema definitions stable, separate names.
+#[schemars(rename = "CoreDynamicToolSpec")]
 pub struct DynamicToolSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub namespace: Option<String>,
     pub name: String,
     pub description: String,

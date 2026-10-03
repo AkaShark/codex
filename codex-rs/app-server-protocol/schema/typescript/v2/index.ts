@@ -80,6 +80,7 @@ export type { ConfiguredHookMatcherGroup } from "./ConfiguredHookMatcherGroup";
 export type { ContextCompactedNotification } from "./ContextCompactedNotification";
 export type { CreditsSnapshot } from "./CreditsSnapshot";
 export type { DeprecationNoticeNotification } from "./DeprecationNoticeNotification";
+export type { DynamicToolCallArgumentsDeltaNotification } from "./DynamicToolCallArgumentsDeltaNotification";
 export type { DynamicToolCallOutputContentItem } from "./DynamicToolCallOutputContentItem";
 export type { DynamicToolCallParams } from "./DynamicToolCallParams";
 export type { DynamicToolCallResponse } from "./DynamicToolCallResponse";
@@ -389,6 +390,8 @@ export type { ThreadRealtimeTranscriptDeltaNotification } from "./ThreadRealtime
 export type { ThreadRealtimeTranscriptDoneNotification } from "./ThreadRealtimeTranscriptDoneNotification";
 export type { ThreadResumeParams } from "./ThreadResumeParams";
 export type { ThreadResumeResponse } from "./ThreadResumeResponse";
+export type { ThreadRevertParams } from "./ThreadRevertParams";
+export type { ThreadRevertResponse } from "./ThreadRevertResponse";
 export type { ThreadRollbackParams } from "./ThreadRollbackParams";
 export type { ThreadRollbackResponse } from "./ThreadRollbackResponse";
 export type { ThreadSetNameParams } from "./ThreadSetNameParams";

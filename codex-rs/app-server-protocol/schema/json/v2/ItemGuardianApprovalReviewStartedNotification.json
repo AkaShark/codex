@@ -575,6 +575,7 @@
       "type": "string"
     },
     "startedAtMs": {
+      "default": 0,
       "description": "Unix timestamp (in milliseconds) when this review started.",
       "format": "int64",
       "type": "integer"
@@ -597,7 +598,6 @@
     "action",
     "review",
     "reviewId",
-    "startedAtMs",
     "threadId",
     "turnId"
   ],

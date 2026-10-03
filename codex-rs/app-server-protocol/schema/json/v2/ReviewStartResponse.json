@@ -1295,6 +1295,32 @@
           ],
           "title": "ContextCompactionThreadItem",
           "type": "object"
+        },
+        {
+          "description": "A requested wait, reported by newer remote app-server versions. The duration is requested time, not evidence of elapsed execution time.",
+          "properties": {
+            "durationMs": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "sleep"
+              ],
+              "title": "SleepThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "durationMs",
+            "id",
+            "type"
+          ],
+          "title": "SleepThreadItem",
+          "type": "object"
         }
       ]
     },

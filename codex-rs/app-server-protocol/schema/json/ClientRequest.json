@@ -553,6 +553,33 @@
         }
       ]
     },
+    "CoreDynamicToolSpec": {
+      "properties": {
+        "deferLoading": {
+          "default": false,
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "inputSchema": true,
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "description",
+        "inputSchema",
+        "name"
+      ],
+      "type": "object"
+    },
     "DynamicToolSpec": {
       "properties": {
         "deferLoading": {
@@ -3529,6 +3556,22 @@
       ],
       "type": "object"
     },
+    "ThreadRevertParams": {
+      "description": "Replaces paginated conversation history with the prefix before a turn. This does not undo changes to files.",
+      "properties": {
+        "beforeTurnId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "beforeTurnId",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadRollbackParams": {
       "properties": {
         "numTurns": {
@@ -4429,6 +4472,30 @@
         "params"
       ],
       "title": "Thread/rollbackRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/revert"
+          ],
+          "title": "Thread/revertRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadRevertParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/revertRequest",
       "type": "object"
     },
     {

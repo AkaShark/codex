@@ -1,5 +1,13 @@
 # codex-app-server
 
+AgentBuddy mobile compatibility: the protocol also carries the newer
+`thread/revert` request (`threadId`, `beforeTurnId`) and its metadata/cursor
+response for remote paginated-history hosts. It removes the named turn and
+later history without reverting files. Clients reload retained turns through
+`thread/turns/list`. This pinned legacy server returns method-not-found for
+`thread/revert`; clients may then use `thread/rollback` with a user-turn count.
+Do not retry a history mutation after an ambiguous transport failure.
+
 `codex app-server` is the interface Codex uses to power rich interfaces such as the [Codex VS Code extension](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt).
 
 ## Table of Contents
@@ -1235,6 +1243,7 @@ Today both notifications carry an empty `items` array even when item events were
 - `enteredReviewMode` — `{id, review}` sent when the reviewer starts; `review` is a short user-facing label such as `"current changes"` or the requested target description.
 - `exitedReviewMode` — `{id, review}` emitted when the reviewer finishes; `review` is the full plain-text review (usually, overall notes plus bullet point findings).
 - `contextCompaction` — `{id}` emitted when codex compacts the conversation history. This can happen automatically.
+- `sleep` — `{id, durationMs}` describes a wait requested by a newer remote app-server. `durationMs` is the requested duration, not elapsed time. This fork accepts the item in history and item notifications for client compatibility; its local runtime does not emit it.
 - `compacted` - `{threadId, turnId}` when codex compacts the conversation history. This can happen automatically. **Deprecated:** Use `contextCompaction` instead.
 
 All items emit shared lifecycle events:

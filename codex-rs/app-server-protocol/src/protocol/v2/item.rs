@@ -359,6 +359,15 @@ pub enum ThreadItem {
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     ContextCompaction { id: String },
+    /// A requested wait, reported by newer remote app-server versions. The
+    /// duration is requested time, not evidence of elapsed execution time.
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    Sleep {
+        id: String,
+        #[ts(type = "number")]
+        duration_ms: i64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
@@ -387,7 +396,8 @@ impl ThreadItem {
             | ThreadItem::ImageGeneration { id, .. }
             | ThreadItem::EnteredReviewMode { id, .. }
             | ThreadItem::ExitedReviewMode { id, .. }
-            | ThreadItem::ContextCompaction { id, .. } => id,
+            | ThreadItem::ContextCompaction { id, .. }
+            | ThreadItem::Sleep { id, .. } => id,
         }
     }
 }
@@ -1171,7 +1181,7 @@ pub struct DynamicToolCallArgumentsDeltaNotification {
     pub turn_id: String,
     pub item_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional = nullable)]
+    #[ts(optional)]
     pub call_id: Option<String>,
     pub delta: String,
 }

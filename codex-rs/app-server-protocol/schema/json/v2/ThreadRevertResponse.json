@@ -2073,13 +2073,30 @@
     }
   },
   "properties": {
+    "itemsBackwardsCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "thread": {
-      "$ref": "#/definitions/Thread"
+      "allOf": [
+        {
+          "$ref": "#/definitions/Thread"
+        }
+      ],
+      "description": "Updated metadata. Hydrate retained turns separately through pagination."
+    },
+    "turnsBackwardsCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [
     "thread"
   ],
-  "title": "ThreadUnarchiveResponse",
+  "title": "ThreadRevertResponse",
   "type": "object"
 }

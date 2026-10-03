@@ -1230,6 +1230,30 @@
             },
             "method": {
               "enum": [
+                "thread/revert"
+              ],
+              "title": "Thread/revertRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadRevertParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/revertRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/list"
               ],
               "title": "Thread/listRequestMethod",
@@ -4334,6 +4358,33 @@
       "title": "ContextCompactedNotification",
       "type": "object"
     },
+    "CoreDynamicToolSpec": {
+      "properties": {
+        "deferLoading": {
+          "default": false,
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "inputSchema": true,
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "description",
+        "inputSchema",
+        "name"
+      ],
+      "type": "object"
+    },
     "CreditsSnapshot": {
       "properties": {
         "balance": {
@@ -4374,6 +4425,38 @@
         "summary"
       ],
       "title": "DeprecationNoticeNotification",
+      "type": "object"
+    },
+    "DynamicToolCallArgumentsDeltaNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Streaming delta for a dynamic tool call's argument JSON.",
+      "properties": {
+        "callId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "delta": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "delta",
+        "itemId",
+        "threadId",
+        "turnId"
+      ],
+      "title": "DynamicToolCallArgumentsDeltaNotification",
       "type": "object"
     },
     "DynamicToolCallOutputContentItem": {
@@ -6559,6 +6642,7 @@
           "$ref": "#/definitions/GuardianApprovalReviewAction"
         },
         "completedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this review completed.",
           "format": "int64",
           "type": "integer"
@@ -6574,6 +6658,7 @@
           "type": "string"
         },
         "startedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this review started.",
           "format": "int64",
           "type": "integer"
@@ -6594,11 +6679,9 @@
       },
       "required": [
         "action",
-        "completedAtMs",
         "decisionSource",
         "review",
         "reviewId",
-        "startedAtMs",
         "threadId",
         "turnId"
       ],
@@ -6620,6 +6703,7 @@
           "type": "string"
         },
         "startedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this review started.",
           "format": "int64",
           "type": "integer"
@@ -6642,7 +6726,6 @@
         "action",
         "review",
         "reviewId",
-        "startedAtMs",
         "threadId",
         "turnId"
       ],
@@ -11473,6 +11556,27 @@
           "type": "object"
         },
         {
+          "description": "Streaming delta for a dynamic tool call's argument JSON. Clients accumulate to render partial tool-call output before the tool call finalizes.",
+          "properties": {
+            "method": {
+              "enum": [
+                "item/dynamicToolCall/argumentsDelta"
+              ],
+              "title": "Item/dynamicToolCall/argumentsDeltaNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/DynamicToolCallArgumentsDeltaNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Item/dynamicToolCall/argumentsDeltaNotification",
+          "type": "object"
+        },
+        {
           "description": "EXPERIMENTAL - proposed plan streaming deltas for plan items.",
           "properties": {
             "method": {
@@ -14106,6 +14210,32 @@
           ],
           "title": "ContextCompactionThreadItem",
           "type": "object"
+        },
+        {
+          "description": "A requested wait, reported by newer remote app-server versions. The duration is requested time, not evidence of elapsed execution time.",
+          "properties": {
+            "durationMs": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "sleep"
+              ],
+              "title": "SleepThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "durationMs",
+            "id",
+            "type"
+          ],
+          "title": "SleepThreadItem",
+          "type": "object"
         }
       ]
     },
@@ -14403,6 +14533,28 @@
     "ThreadReadResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "approvalPolicy": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AskForApproval"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sandbox": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SandboxPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "thread": {
           "$ref": "#/definitions/Thread"
         }
@@ -14821,6 +14973,54 @@
         "thread"
       ],
       "title": "ThreadResumeResponse",
+      "type": "object"
+    },
+    "ThreadRevertParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Replaces paginated conversation history with the prefix before a turn. This does not undo changes to files.",
+      "properties": {
+        "beforeTurnId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "beforeTurnId",
+        "threadId"
+      ],
+      "title": "ThreadRevertParams",
+      "type": "object"
+    },
+    "ThreadRevertResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "itemsBackwardsCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thread": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Thread"
+            }
+          ],
+          "description": "Updated metadata. Hydrate retained turns separately through pagination."
+        },
+        "turnsBackwardsCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "thread"
+      ],
+      "title": "ThreadRevertResponse",
       "type": "object"
     },
     "ThreadRollbackParams": {

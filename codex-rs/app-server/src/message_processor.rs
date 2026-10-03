@@ -1056,6 +1056,11 @@ impl MessageProcessor {
                     .thread_rollback(&request_id, params)
                     .await
             }
+            ClientRequest::ThreadRevert { .. } => Err(JSONRPCErrorError {
+                code: -32601,
+                message: "thread/revert requires a paginated-history host; use thread/rollback on this legacy server".to_string(),
+                data: None,
+            }),
             ClientRequest::ThreadList { params, .. } => {
                 self.thread_processor.thread_list(params).await
             }

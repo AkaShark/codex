@@ -168,7 +168,7 @@ impl ChatWidget {
             ThreadItem::ContextCompaction { .. } => {
                 self.add_info_message("Context compacted".to_string(), /*hint*/ None);
             }
-            ThreadItem::HookPrompt { .. } => {}
+            ThreadItem::HookPrompt { .. } | ThreadItem::Sleep { .. } => {}
             ThreadItem::CollabAgentToolCall {
                 id,
                 tool,

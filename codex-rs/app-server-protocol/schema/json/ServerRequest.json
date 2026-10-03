@@ -421,6 +421,7 @@
           ]
         },
         "startedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this approval request started.",
           "format": "int64",
           "type": "integer"
@@ -434,7 +435,6 @@
       },
       "required": [
         "itemId",
-        "startedAtMs",
         "threadId",
         "turnId"
       ],
@@ -608,6 +608,7 @@
           ]
         },
         "startedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this approval request started.",
           "format": "int64",
           "type": "integer"
@@ -621,7 +622,6 @@
       },
       "required": [
         "itemId",
-        "startedAtMs",
         "threadId",
         "turnId"
       ],
@@ -1603,6 +1603,7 @@
           ]
         },
         "startedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this approval request started.",
           "format": "int64",
           "type": "integer"
@@ -1618,7 +1619,6 @@
         "cwd",
         "itemId",
         "permissions",
-        "startedAtMs",
         "threadId",
         "turnId"
       ],

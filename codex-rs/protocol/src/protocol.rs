@@ -4892,6 +4892,8 @@ mod tests {
             realtime_session_id: Some("conv_1".to_string()),
             transport: None,
             voice: None,
+            client_controlled_handoff: false,
+            dynamic_tools: None,
         });
         let webrtc_start = Op::RealtimeConversationStart(ConversationStartParams {
             output_modality: RealtimeOutputModality::Audio,
@@ -4901,6 +4903,8 @@ mod tests {
                 sdp: "v=offer\r\n".to_string(),
             }),
             voice: Some(RealtimeVoice::Cove),
+            client_controlled_handoff: false,
+            dynamic_tools: None,
         });
         let text = Op::RealtimeConversationText(ConversationTextParams {
             text: "hello".to_string(),
@@ -4912,6 +4916,8 @@ mod tests {
             realtime_session_id: None,
             transport: None,
             voice: None,
+            client_controlled_handoff: false,
+            dynamic_tools: None,
         });
         let null_prompt_start = Op::RealtimeConversationStart(ConversationStartParams {
             output_modality: RealtimeOutputModality::Audio,
@@ -4919,6 +4925,8 @@ mod tests {
             realtime_session_id: None,
             transport: None,
             voice: None,
+            client_controlled_handoff: false,
+            dynamic_tools: None,
         });
         let list_voices = Op::RealtimeConversationListVoices;
 

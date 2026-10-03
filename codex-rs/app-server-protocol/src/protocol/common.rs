@@ -560,6 +560,11 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadRollbackResponse,
     },
+    ThreadRevert => "thread/revert" {
+        params: v2::ThreadRevertParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadRevertResponse,
+    },
     ThreadList => "thread/list" {
         params: v2::ThreadListParams,
         serialization: None,
@@ -2802,6 +2807,8 @@ mod tests {
                 realtime_session_id: Some("sess_456".to_string()),
                 transport: None,
                 voice: Some(RealtimeVoice::Marin),
+                client_controlled_handoff: false,
+                dynamic_tools: None,
             },
         };
         assert_eq!(
@@ -2833,6 +2840,8 @@ mod tests {
                 realtime_session_id: None,
                 transport: None,
                 voice: None,
+                client_controlled_handoff: false,
+                dynamic_tools: None,
             },
         };
         assert_eq!(
@@ -2859,6 +2868,8 @@ mod tests {
                 realtime_session_id: None,
                 transport: None,
                 voice: None,
+                client_controlled_handoff: false,
+                dynamic_tools: None,
             },
         };
         assert_eq!(
@@ -3028,6 +3039,8 @@ mod tests {
                 realtime_session_id: None,
                 transport: None,
                 voice: None,
+                client_controlled_handoff: false,
+                dynamic_tools: None,
             },
         };
         let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&request);

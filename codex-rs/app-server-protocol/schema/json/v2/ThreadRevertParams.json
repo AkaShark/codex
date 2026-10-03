@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Replaces paginated conversation history with the prefix before a turn. This does not undo changes to files.",
+  "properties": {
+    "beforeTurnId": {
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "beforeTurnId",
+    "threadId"
+  ],
+  "title": "ThreadRevertParams",
+  "type": "object"
+}

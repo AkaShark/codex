@@ -575,6 +575,7 @@
       "$ref": "#/definitions/GuardianApprovalReviewAction"
     },
     "completedAtMs": {
+      "default": 0,
       "description": "Unix timestamp (in milliseconds) when this review completed.",
       "format": "int64",
       "type": "integer"
@@ -590,6 +591,7 @@
       "type": "string"
     },
     "startedAtMs": {
+      "default": 0,
       "description": "Unix timestamp (in milliseconds) when this review started.",
       "format": "int64",
       "type": "integer"
@@ -610,11 +612,9 @@
   },
   "required": [
     "action",
-    "completedAtMs",
     "decisionSource",
     "review",
     "reviewId",
-    "startedAtMs",
     "threadId",
     "turnId"
   ],

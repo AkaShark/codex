@@ -953,6 +953,36 @@
       ],
       "type": "object"
     },
+    "DynamicToolCallArgumentsDeltaNotification": {
+      "description": "Streaming delta for a dynamic tool call's argument JSON.",
+      "properties": {
+        "callId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "delta": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "delta",
+        "itemId",
+        "threadId",
+        "turnId"
+      ],
+      "type": "object"
+    },
     "DynamicToolCallOutputContentItem": {
       "oneOf": [
         {
@@ -1971,6 +2001,7 @@
           "$ref": "#/definitions/GuardianApprovalReviewAction"
         },
         "completedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this review completed.",
           "format": "int64",
           "type": "integer"
@@ -1986,6 +2017,7 @@
           "type": "string"
         },
         "startedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this review started.",
           "format": "int64",
           "type": "integer"
@@ -2006,11 +2038,9 @@
       },
       "required": [
         "action",
-        "completedAtMs",
         "decisionSource",
         "review",
         "reviewId",
-        "startedAtMs",
         "threadId",
         "turnId"
       ],
@@ -2030,6 +2060,7 @@
           "type": "string"
         },
         "startedAtMs": {
+          "default": 0,
           "description": "Unix timestamp (in milliseconds) when this review started.",
           "format": "int64",
           "type": "integer"
@@ -2052,7 +2083,6 @@
         "action",
         "review",
         "reviewId",
-        "startedAtMs",
         "threadId",
         "turnId"
       ],
@@ -3945,6 +3975,32 @@
           ],
           "title": "ContextCompactionThreadItem",
           "type": "object"
+        },
+        {
+          "description": "A requested wait, reported by newer remote app-server versions. The duration is requested time, not evidence of elapsed execution time.",
+          "properties": {
+            "durationMs": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "sleep"
+              ],
+              "title": "SleepThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "durationMs",
+            "id",
+            "type"
+          ],
+          "title": "SleepThreadItem",
+          "type": "object"
         }
       ]
     },
@@ -5326,6 +5382,27 @@
         "params"
       ],
       "title": "Item/agentMessage/deltaNotification",
+      "type": "object"
+    },
+    {
+      "description": "Streaming delta for a dynamic tool call's argument JSON. Clients accumulate to render partial tool-call output before the tool call finalizes.",
+      "properties": {
+        "method": {
+          "enum": [
+            "item/dynamicToolCall/argumentsDelta"
+          ],
+          "title": "Item/dynamicToolCall/argumentsDeltaNotificationMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/DynamicToolCallArgumentsDeltaNotification"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "title": "Item/dynamicToolCall/argumentsDeltaNotification",
       "type": "object"
     },
     {

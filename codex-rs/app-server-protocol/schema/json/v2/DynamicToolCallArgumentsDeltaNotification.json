@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Streaming delta for a dynamic tool call's argument JSON.",
+  "properties": {
+    "callId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "delta": {
+      "type": "string"
+    },
+    "itemId": {
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "delta",
+    "itemId",
+    "threadId",
+    "turnId"
+  ],
+  "title": "DynamicToolCallArgumentsDeltaNotification",
+  "type": "object"
+}
